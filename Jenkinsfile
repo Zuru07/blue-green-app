@@ -53,7 +53,7 @@ pipeline {
 
         stage('Test Inactive Environment') {
             steps {
-                bat "timeout /t 5"  // Wait 5 seconds
+                bat "ping 127.0.0.1 -n 6 >nul"  // Wait ~5 seconds (1 ping/second + 1 initial)
                 bat "curl -s http://localhost:${env.INACTIVE_PORT} >nul 2>&1 || exit /b 1"
                 echo "Testing ${env.INACTIVE_PORT} environment"
             }
