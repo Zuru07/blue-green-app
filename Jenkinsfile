@@ -3,18 +3,19 @@ pipeline {
 
     environment {
         DOCKER_IMAGE = 'zuru07/bluegreen-sample'
-        VERSION = 'v${BUILD_NUMBER}' 
-        KUBECTL = 'kubectl'
-        ACTIVE_ENV = 'blue'
+        VERSION = 'v${BUILD_NUMBER}'
+        BLUE_PORT = '3001'
+        GREEN_PORT = '3002'
+        ACTIVE_PORT_FILE = 'active-port.txt'
     }
 
     stages {
         stage('Build and Push Docker Image') {
             steps {
                 script {
-                    docker.build("${DOCKER_IMAGE}:${VERSION}")
+                    def customImage = docker.build("${DOCKER_IMAGE}:${VERSION}")
                     docker.withRegistry('https://registry.hub.docker.com', 'dockerhub-cred') {
-                        docker.image("${DOCKER_IMAGE}:${VERSION}").push()
+                        customImage.push()
                     }
                 }
             }
@@ -23,56 +24,57 @@ pipeline {
         stage('Determine Inactive Environment') {
             steps {
                 script {
-                    def currentSelector = sh(script: "${KUBECTL} get svc nodejs-service -o jsonpath='{.spec.selector.env}'", returnStdout: true).trim()
-                    if (currentSelector == 'blue') {
-                        env.INACTIVE_ENV = 'green'
-                    } else {
-                        env.INACTIVE_ENV = 'blue'
+                    def activePort = "${BLUE_PORT}"  // Default to blue on first run
+                    if (fileExists(env.ACTIVE_PORT_FILE)) {
+                        activePort = readFile(env.ACTIVE_PORT_FILE).trim()
                     }
-                    env.ACTIVE_ENV = currentSelector
+                    if (activePort == BLUE_PORT) {
+                        env.INACTIVE_PORT = GREEN_PORT
+                        env.ACTIVE_PORT = BLUE_PORT
+                    } else {
+                        env.INACTIVE_PORT = BLUE_PORT
+                        env.ACTIVE_PORT = GREEN_PORT
+                    }
+                    writeFile file: env.ACTIVE_PORT_FILE, text: env.ACTIVE_PORT
                 }
             }
         }
 
         stage('Deploy to Inactive Environment') {
             steps {
-                withKubeConfig([credentialsId: 'kubeconfig']) {
-                    sh """
-                        ${KUBECTL} apply -f k8s/deployment-${env.INACTIVE_ENV}.yaml --record
-                        ${KUBECTL} set image deployment/nodejs-${env.INACTIVE_ENV} nodejs=${DOCKER_IMAGE}:${VERSION}
-                        ${KUBECTL} rollout status deployment/nodejs-${env.INACTIVE_ENV}
-                    """
-                }
+                sh """
+                    docker stop ${env.INACTIVE_PORT == BLUE_PORT ? 'blue-container' : 'green-container'} || true
+                    docker rm ${env.INACTIVE_PORT == BLUE_PORT ? 'blue-container' : 'green-container'} || true
+                    docker run -d --name ${env.INACTIVE_PORT == BLUE_PORT ? 'blue-container' : 'green-container'} -p ${env.INACTIVE_PORT}:3000 ${DOCKER_IMAGE}:${VERSION}
+                """
             }
         }
 
         stage('Test Inactive Environment') {
             steps {
-                sh "echo 'Testing ${env.INACTIVE_ENV} environment'"
-                // Add tests, e.g., curl http://nodejs-${env.INACTIVE_ENV}:3000 (adjust for your setup)
+                sh "timeout /t 5"  // Wait 5 seconds for container to start (Windows)
+                bat "curl -s http://localhost:${env.INACTIVE_PORT} >nul 2>&1 || exit /b 1"
+                echo "Testing ${env.INACTIVE_PORT} environment"
             }
         }
 
         stage('Switch Traffic') {
             steps {
-                withKubeConfig([credentialsId: 'kubeconfig']) {
-                    sh "${KUBECTL} patch svc nodejs-service -p '{\"spec\":{\"selector\":{\"env\":\"${env.INACTIVE_ENV}\"}}}'"
-                }
+                bat "echo ${env.INACTIVE_PORT} > ${env.ACTIVE_PORT_FILE}"
+                echo "Traffic switched to port ${env.INACTIVE_PORT}. Update your client to use http://localhost:${env.INACTIVE_PORT}."
             }
         }
 
         stage('Cleanup Old Environment') {
             steps {
-                echo "Old env (${env.ACTIVE_ENV}) is now inactive and ready for next deployment."
+                echo "Old env (port ${env.ACTIVE_PORT}) is now inactive."
             }
         }
     }
 
     post {
         failure {
-            withKubeConfig([credentialsId: 'kubeconfig']) {
-                sh "${KUBECTL} patch svc nodejs-service -p '{\"spec\":{\"selector\":{\"env\":\"${env.ACTIVE_ENV}\"}}}'"
-            }
+            bat "echo 'Rollback not implemented; manually switch back to ${env.ACTIVE_PORT} if needed.'"
         }
     }
 }
