@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         DOCKER_IMAGE = 'zuru07/bluegreen-sample'
-        VERSION = '${BUILD_NUMBER}'  // Ensure this resolves to the build number
+        VERSION = "${env.BUILD_NUMBER}"  // Use env.BUILD_NUMBER for proper resolution
         BLUE_PORT = '3001'
         GREEN_PORT = '3002'
         ACTIVE_PORT_FILE = 'active-port.txt'
