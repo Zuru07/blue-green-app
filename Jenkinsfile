@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         DOCKER_IMAGE = 'zuru07/bluegreen-sample'
-        VERSION = '${BUILD_NUMBER}'
+        VERSION = '${BUILD_NUMBER}'  // Ensure this resolves to the build number
         BLUE_PORT = '3001'
         GREEN_PORT = '3002'
         ACTIVE_PORT_FILE = 'active-port.txt'
@@ -13,6 +13,7 @@ pipeline {
         stage('Build and Push Docker Image') {
             steps {
                 script {
+                    echo "Building image with tag: ${DOCKER_IMAGE}:v${VERSION}"  // Debug output
                     def customImage = docker.build("${DOCKER_IMAGE}:v${VERSION}")
                     docker.withRegistry('https://registry.hub.docker.com', 'dockerhub-cred') {
                         customImage.push()
@@ -42,17 +43,17 @@ pipeline {
 
         stage('Deploy to Inactive Environment') {
             steps {
-                sh """
-                    docker stop ${env.INACTIVE_PORT == BLUE_PORT ? 'blue-container' : 'green-container'} || true
-                    docker rm ${env.INACTIVE_PORT == BLUE_PORT ? 'blue-container' : 'green-container'} || true
-                    docker run -d --name ${env.INACTIVE_PORT == BLUE_PORT ? 'blue-container' : 'green-container'} -p ${env.INACTIVE_PORT}:3000 ${DOCKER_IMAGE}:${VERSION}
+                bat """
+                    docker stop ${env.INACTIVE_PORT == BLUE_PORT ? 'blue-container' : 'green-container'} || exit /b 0
+                    docker rm ${env.INACTIVE_PORT == BLUE_PORT ? 'blue-container' : 'green-container'} || exit /b 0
+                    docker run -d --name ${env.INACTIVE_PORT == BLUE_PORT ? 'blue-container' : 'green-container'} -p ${env.INACTIVE_PORT}:3000 ${DOCKER_IMAGE}:v${VERSION}
                 """
             }
         }
 
         stage('Test Inactive Environment') {
             steps {
-                sh "timeout /t 5"  // Wait 5 seconds for container to start (Windows)
+                bat "timeout /t 5"  // Wait 5 seconds
                 bat "curl -s http://localhost:${env.INACTIVE_PORT} >nul 2>&1 || exit /b 1"
                 echo "Testing ${env.INACTIVE_PORT} environment"
             }
