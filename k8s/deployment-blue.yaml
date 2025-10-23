@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nodejs-blue
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nodejs
+      env: blue
+  template:
+    metadata:
+      labels:
+        app: nodejs
+        env: blue
+    spec:
+      containers:
+      - name: nodejs
+        image: zuru07/bluegreen-sample:v1
+        ports:
+        - containerPort: 3000
