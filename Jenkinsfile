@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         DOCKER_IMAGE = 'zuru07/bluegreen-sample'
-        VERSION = 'v${BUILD_NUMBER}'
+        VERSION = '${BUILD_NUMBER}'
         BLUE_PORT = '3001'
         GREEN_PORT = '3002'
         ACTIVE_PORT_FILE = 'active-port.txt'
@@ -13,7 +13,7 @@ pipeline {
         stage('Build and Push Docker Image') {
             steps {
                 script {
-                    def customImage = docker.build("${DOCKER_IMAGE}:${VERSION}")
+                    def customImage = docker.build("${DOCKER_IMAGE}:v${VERSION}")
                     docker.withRegistry('https://registry.hub.docker.com', 'dockerhub-cred') {
                         customImage.push()
                     }
